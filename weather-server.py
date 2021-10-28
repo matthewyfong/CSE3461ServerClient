@@ -2,17 +2,18 @@
 
 import socket
 
-HOST = '127.0.0.1'  # Standard loopback interface address (localhost)
-PORT = 8080        # Port to listen on (non-privileged ports are > 1023)
+mysocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+buffer_size = 1024
 
-with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-    s.bind((HOST, PORT))
-    s.listen()
-    conn, addr = s.accept()
-    with conn:
-        print('Connected by', addr)
-        while True:
-            data = conn.recv(1024)
-            if not data:
-                break
-            conn.sendall(data)
+text = "Hello, World!"
+
+mysocket.bind(('127.0.0.1', 9879))
+mysocket.listen(5)
+(client, (ip,port)) = mysocket.accept()
+
+print(client, port)
+client.send(b"knock knock knock, I'm the server")
+data = client.recv(buffer_size)
+print(data.decode())
+
+mysocket.close()
