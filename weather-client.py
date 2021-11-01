@@ -1,19 +1,16 @@
 #!/usr/bin/env python3
 
-import socket
+import socket 
 
-host = '127.0.0.1'
-port = 9879
-buffer_size = 1024
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM) 
+host = '127.0.0.1' 
+port = 5555
 
-text = "Hello, World!"
+try: 
+    s.bind((host, port)) 
+except socket.error as e: 
+    print(str(e)) 
 
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.connect((host, port))
-
-text = text.encode('utf-8')
-s.send(text)
-data = s.recv(buffer_size)
-
+s.connect((host, port)) 
+print(s.recv(1024)) 
 s.close()
-print("received data:", data)
