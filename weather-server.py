@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 
-import socket 
+import socket
 
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM) 
-host = '127.0.0.1' 
-port = 5555 
+HOST = '127.0.0.1'  # Standard loopback interface address (localhost)
+PORT = 65432        # Port to listen on (non-privileged ports are > 1023)
 
-s.bind((host, port)) 
-s.listen(5) 
-
-while True: 
-    c, addr = s.accept() 
-    print('Got connection from', addr) 
-    c.send(b'Thank you for connecting') 
-    
-c.close()
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+    s.bind((HOST, PORT))
+    s.listen()
+    conn, addr = s.accept()
+    with conn:
+        print('Connected by', addr)
+        while True:
+            data = conn.recv(1024)
+            if not data:
+                break
+            conn.sendall(data)

@@ -1,16 +1,13 @@
 #!/usr/bin/env python3
 
-import socket 
+import socket
 
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM) 
-host = '127.0.0.1' 
-port = 5555
+HOST = '127.0.0.1'  # The server's hostname or IP address
+PORT = 65432        # The port used by the server
 
-try: 
-    s.bind((host, port)) 
-except socket.error as e: 
-    print(str(e)) 
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+    s.connect((HOST, PORT))
+    s.sendall(b'Hello, world')
+    data = s.recv(1024)
 
-s.connect((host, port)) 
-print(s.recv(1024)) 
-s.close()
+print('Received', repr(data))
