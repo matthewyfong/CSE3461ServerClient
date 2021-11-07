@@ -3,49 +3,229 @@
 # Author: Matthew Fong(.131)
 """
 Weather Server
+https://openweathermap.org/api
 """
 
 from configparser import ConfigParser
+import io
+import sys
 import socket
 import argparse
-import sys
+from time import sleep
+import threading
+import requests
+import json
 
 #args
 parser = argparse.ArgumentParser(description='Weather Server')
-parser.add_argument(
-    '-z', '--zipcode', 
-    help='Zip Code you want to view the weather with', 
-    #required=True,
-    action='append'
-)
+group = parser.add_mutually_exclusive_group(required=False)
 
 parser.add_argument(
-    '-t', '--test', 
-    help='Using PAM test', 
-    dest='do something',
+    '-c', '--close', 
+    help='Close the server/client', 
+    dest='close_server',
+    action='store_true',
     default=False
 )
 
-args = parser.parse_args()
+parser.add_argument(
+    '-z', '--zipcode', 
+    help='Added Zipcode',
+    dest='zipcode',
+)
 
-def main(argv):
+group.add_argument(
+    '-w', '--windspeed', 
+    help='Show windspeed', 
+    dest='windspeed',
+    action='store_true',
+    default=False
+)
+
+group.add_argument(
+    '-y', '--humidity', 
+    help='Show humidity', 
+    dest='humidity',
+    action='store_true',
+    default=False
+)
+
+group.add_argument(
+    '-t', '--temperature', 
+    help='Show temperature', 
+    dest='temp',
+    action='store_true',
+    default=False
+)
+
+group.add_argument(
+    '-l', '--highlow', 
+    help='Show high/low', 
+    dest='highlow',
+    action='store_true',
+    default=False
+)
+
+group.add_argument(
+    '-p', '--precipitation', 
+    help='Show percipitation', 
+    dest='precipitation',
+    action='store_true',
+    default=False
+)
+
+print_lock = threading.Lock()
+WEATHER_API_KEY = "b8672eafc859e96de4c67b74b9680e71"
+true_exit = False
+
+def apiWeather(zipcode):
+    response = requests.get('https://api.openweathermap.org/data/2.5/weather?zip={}&appid={}&units=imperical'.format(zipcode, WEATHER_API_KEY))
+    return response
+    
+def apiThreeHour(zipcode):
+    response = requests.get('https://api.openweathermap.org/data/2.5/forecast?zip={}&appid={}&units=imperical'.format(zipcode, WEATHER_API_KEY))
+    return response
+
+# https://www.weather.gov/mlb/seasonal_wind_threat
+def getWindspeed(zipcode, responseCurrent):
+    data = responseCurrent.json()
+    windCurrently = data['wind']['speed']
+    message = "The current windspeed at {} is {} mph.\n".format(zipcode, windCurrently)
+    if windCurrently < 10:
+        message += 'The sustain wind speeds are non-threatening; "breezy" conditions may still be present.'
+    elif 10 <= windCurrently < 20:
+        message += '"Breezy" to "Windy" conditions. Sustained wind speeds around 20 mph, or frequent gusts of 25 to 30 mph.'
+    elif 20 <= windCurrently < 25:
+        message += '"Windy" conditions. Sustained wind speeds of 21 to 25 mph, or frequent wind gusts of 30 to 35 mph.'
+    elif 25 <= windCurrently < 39:
+        message += '"Very windy" with sustained speeds of 26 to 39 mph, or frequent wind gusts of 35 to 57 mph. Wind conditions consistent with a wind advisory.'
+    elif 39 <= windCurrently < 57:
+        message += '"High wind" with sustained speeds of 40 to 57 mph. Wind conditions consistent with a high wind warning.'
+    else:
+        message += '"Damaging high wind" with sustained speeds greater than 58 mph, or frequent wind gusts greater than 58 mph. Damaging wind conditions are consistent with a high wind warning.'
+    return message
+    
+def getHumidity(zipcode, responseCurrent):
+    data = responseCurrent.json()
+    humidityCurrently = data['main']['humidity']
+    message = "The current humidity at {} is {}%.\n".format(zipcode, humidityCurrently)
+    return message
+    
+def getTemp(zipcode, responseCurrent):
+    data = responseCurrent.json()
+    tempCurrently = data['main']['temp']
+    message = "The current temperature at {} is {} Kelvin.\n".format(zipcode, tempCurrently)
+    return message
+
+def getHighLow(zipcode, responseCurrent):
+    data = responseCurrent.json()
+    minCurrently = data['main']['temp_min']
+    maxCurrently = data['main']['temp_max']
+    message = "The current min at {} is {} Kelvin.\n".format(zipcode, minCurrently)
+    message += "The current min at {} is {} Kelvin.\n".format(zipcode, maxCurrently)
+    return message
+    
+def getPrecipitation(zipcode, responseFuture):
+    data = responseFuture.json()
+    rainThreeHours = []
+    rainThreeHours = data['list']
+    rain = 0
+    for time in rainThreeHours:
+        if rain in time:
+            rain += time['rain']['3h']
+    message = "The expected rain in the next 3 hours at {} is {} mm.\n".format(zipcode, rain)
+    return message
+  
+# thread function
+def threaded(c):
+    global true_exit
+    thread_exit = False
+    while not thread_exit:
+        # data received from client
+        data = c.recv(1024).decode('ascii')
+        if data:
+            old_stdout = sys.stdout
+            new_stdout = io.StringIO()
+            sys.stdout = new_stdout
+            try:
+                args = parser.parse_args(data.split())
+            except:
+                print("Something went wrong; here's some help.")
+                parser.print_help()
+                message = new_stdout.getvalue()
+                sys.stdout = old_stdout
+                print("{}".format(message))
+                c.send(new_stdout.getvalue().encode('ascii'))
+                continue
+            if args.close_server:
+                true_exit = True
+                thread_exit = True
+                print("Shutting down now!")
+            else:
+                responseCurrent = apiWeather(args.zipcode)
+                responseFuture = apiThreeHour(args.zipcode)
+                if not args.windspeed and not args.humidity and not args.temp and not args.highlow and not args.precipitation: #and args.
+                    print("You need something to check!")
+                    parser.print_help()
+                else:
+                    if args.windspeed:
+                        print(getWindspeed(args.zipcode, responseCurrent))
+                    if args.humidity:
+                        print(getHumidity(args.zipcode, responseCurrent))
+                    if args.temp:
+                        print(getTemp(args.zipcode, responseCurrent))
+                    if args.highlow:
+                        print(getHighLow(args.zipcode, responseCurrent))
+                    if args.precipitation:
+                        print(getPrecipitation(args.zipcode, responseFuture))
+            message = new_stdout.getvalue()
+            sys.stdout = old_stdout
+            print("{}".format(message))
+            c.send(new_stdout.getvalue().encode('ascii'))
+        else:
+            print('Bye')
+            c.send("Good bye!".encode('ascii'))
+            break
+        sleep(.25)
+            
+    # lock released on exit
+    print("Closing thread.")
+    print_lock.release()
+    # connection closed
+    c.close()
+  
+def main(args):
+    thread_count = 0
     #Read config.ini file
     config_object = ConfigParser()
     config_object.read("config.ini")
-    HOST = config_object['SERVERCONFIG']['host'] # The server's hostname or IP address
-    PORT = int(config_object['SERVERCONFIG']['port']) # The port used by the server
-    
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind((HOST, PORT))
-        s.listen()
-        conn, addr = s.accept()
-        with conn:
-            print('Connected by', addr)
-            while True:
-                data = conn.recv(1024)
-                if not data:
-                    break
-                conn.sendall(data)
+    host, port = config_object['SERVERCONFIG']['host'], int(config_object['SERVERCONFIG']['port'])
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind((host, port))
+    except socket.error as e:
+        print(str(e))
+    print("socket binded to port", port)
+  
+    # put the socket into listening mode
+    s.listen()
+    print("socket is listening")
+  
+    # a forever loop until client wants to exit
+    while not true_exit:
+        # establish connection with client
+        c, addr = s.accept()
+  
+        # lock acquired by client
+        print_lock.acquire()
+        print('Connected to :', addr[0], ':', addr[1])
+  
+        # Start a new thread and return its identifier
+        t = threading.Thread(target=threaded, args=(c,))
+        t.start()
+        t.join()
+    print("Closing socket.")
+    s.close()
 
 if __name__ == "__main__":
     main(sys.argv[1:])
