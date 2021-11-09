@@ -5,7 +5,7 @@
 Weather Client
 """
 
-# Still need to do! Smooth close, add logger, add arguments
+# Add logger
 
 from configparser import ConfigParser
 from time import sleep
@@ -48,10 +48,12 @@ def main(args):
     
     # connect to server on local computer
     s.connect((host,port))
+    s.send("Initial Message".encode('ascii'))
+    data = s.recv(1024)
+    print('Received from the server: {}'.format(str(data.decode('ascii'))))
     msg = ' '.join(args)
     
     client_exit = False
-    print(initial_msg)
     while not client_exit:
         if initial_msg.close_server:
             s.send(msg.encode('ascii'))

@@ -15,6 +15,7 @@ from time import sleep
 import threading
 import requests
 import json
+import logging
 
 #args
 parser = argparse.ArgumentParser(description='Weather Server')
@@ -74,15 +75,18 @@ group.add_argument(
     default=False
 )
 
+logging.basicConfig(filename='weather.log', filemode='w', encoding='utf-8', format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p', level=logging.DEBUG)
 print_lock = threading.Lock()
 WEATHER_API_KEY = "b8672eafc859e96de4c67b74b9680e71"
 true_exit = False
 
 def apiWeather(zipcode):
+    logging.info('Making API Request for current weather')
     response = requests.get('https://api.openweathermap.org/data/2.5/weather?zip={}&appid={}&units=imperical'.format(zipcode, WEATHER_API_KEY))
     return response
     
 def apiThreeHour(zipcode):
+    logging.info('Making API Request for future weather')
     response = requests.get('https://api.openweathermap.org/data/2.5/forecast?zip={}&appid={}&units=imperical'.format(zipcode, WEATHER_API_KEY))
     return response
 
@@ -90,7 +94,8 @@ def apiThreeHour(zipcode):
 def getWindspeed(zipcode, responseCurrent):
     data = responseCurrent.json()
     windCurrently = data['wind']['speed']
-    message = "The current windspeed at {} is {} mph.\n".format(zipcode, windCurrently)
+    logging.info('Getting wind conditions message for printing.')
+    message = "The current windspeed at {} is {} mph.".format(zipcode, windCurrently)
     if windCurrently < 10:
         message += 'The sustain wind speeds are non-threatening; "breezy" conditions may still be present.'
     elif 10 <= windCurrently < 20:
@@ -107,57 +112,69 @@ def getWindspeed(zipcode, responseCurrent):
     
 def getHumidity(zipcode, responseCurrent):
     data = responseCurrent.json()
+    logging.info('Getting humidity message for printing')
     humidityCurrently = data['main']['humidity']
-    message = "The current humidity at {} is {}%.\n".format(zipcode, humidityCurrently)
+    message = "The current humidity at {} is {}%.".format(zipcode, humidityCurrently)
     return message
     
 def getTemp(zipcode, responseCurrent):
     data = responseCurrent.json()
+    logging.info('Getting temperature message for printing')
     tempCurrently = data['main']['temp']
-    message = "The current temperature at {} is {} Kelvin.\n".format(zipcode, tempCurrently)
+    message = "The current temperature at {} is {} Kelvin.".format(zipcode, tempCurrently)
     return message
 
 def getHighLow(zipcode, responseCurrent):
     data = responseCurrent.json()
+    logging.info('Getting high/low message for printing')
     minCurrently = data['main']['temp_min']
     maxCurrently = data['main']['temp_max']
-    message = "The current min at {} is {} Kelvin.\n".format(zipcode, minCurrently)
-    message += "The current min at {} is {} Kelvin.\n".format(zipcode, maxCurrently)
+    message = "The current min at {} is {} Kelvin.".format(zipcode, minCurrently)
+    message += "The current min at {} is {} Kelvin.".format(zipcode, maxCurrently)
     return message
     
 def getPrecipitation(zipcode, responseFuture):
     data = responseFuture.json()
+    logging.info('Getting precipitation message for printing')
     rainThreeHours = []
     rainThreeHours = data['list']
     rain = 0
     for time in rainThreeHours:
         if rain in time:
             rain += time['rain']['3h']
-    message = "The expected rain in the next 3 hours at {} is {} mm.\n".format(zipcode, rain)
+    message = "The expected rain in the next 3 hours at {} is {} mm.".format(zipcode, rain)
     return message
   
 # thread function
-def threaded(c):
+def threaded(c, port):
     global true_exit
+    logging.info('Starting new thread')
     thread_exit = False
     while not thread_exit:
         # data received from client
+        logging.info('Receiving from client')
         data = c.recv(1024).decode('ascii')
         if data:
+            logging.info('Resetting stdout to variable')
             old_stdout = sys.stdout
             new_stdout = io.StringIO()
             sys.stdout = new_stdout
             try:
+                logging.info('Parsing user sent arguments')
                 args = parser.parse_args(data.split())
             except:
+                logging.warning('Exception found, printing help message')
                 print("Something went wrong; here's some help.")
                 parser.print_help()
+                logging.info('Changing stdout to i/o interface')
                 message = new_stdout.getvalue()
                 sys.stdout = old_stdout
                 print("{}".format(message))
+                logging.info('Sending message back to client')
                 c.send(new_stdout.getvalue().encode('ascii'))
                 continue
             if args.close_server:
+                logging.info('Setting variables to close server')
                 true_exit = True
                 thread_exit = True
                 print("Shutting down now!")
@@ -165,6 +182,7 @@ def threaded(c):
                 responseCurrent = apiWeather(args.zipcode)
                 responseFuture = apiThreeHour(args.zipcode)
                 if not args.windspeed and not args.humidity and not args.temp and not args.highlow and not args.precipitation: #and args.
+                    logging.info('No arguments found')
                     print("You need something to check!")
                     parser.print_help()
                 else:
@@ -178,11 +196,14 @@ def threaded(c):
                         print(getHighLow(args.zipcode, responseCurrent))
                     if args.precipitation:
                         print(getPrecipitation(args.zipcode, responseFuture))
+            logging.info('Changing stdout to i/o interface')
             message = new_stdout.getvalue()
             sys.stdout = old_stdout
             print("{}".format(message))
+            logging.info('Sending message back to client')
             c.send(new_stdout.getvalue().encode('ascii'))
         else:
+            logging.info('Client closing itself')
             print('Bye')
             c.send("Good bye!".encode('ascii'))
             break
@@ -195,15 +216,20 @@ def threaded(c):
     c.close()
   
 def main(args):
+    logging.info('Server starting up')
     thread_count = 0
     #Read config.ini file
+    logging.info('Reading config file')
     config_object = ConfigParser()
     config_object.read("config.ini")
+    
+    logging.info('Performing socket work')
     host, port = config_object['SERVERCONFIG']['host'], int(config_object['SERVERCONFIG']['port'])
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         s.bind((host, port))
     except socket.error as e:
+        logging.error(e)
         print(str(e))
     print("socket binded to port", port)
   
@@ -215,16 +241,18 @@ def main(args):
     while not true_exit:
         # establish connection with client
         c, addr = s.accept()
-  
+        logging.info('Accepted client')
         # lock acquired by client
         print_lock.acquire()
         print('Connected to :', addr[0], ':', addr[1])
+        data = c.recv(1024).decode('ascii')
+        c.send("Connected to : {} : {}".format(addr[0], addr[1]).encode('ascii'))
   
         # Start a new thread and return its identifier
-        t = threading.Thread(target=threaded, args=(c,))
+        t = threading.Thread(target=threaded, args=(c, addr[1]))
         t.start()
         t.join()
-    print("Closing socket.")
+    logging.info('Closing socket and exiting')
     s.close()
 
 if __name__ == "__main__":
